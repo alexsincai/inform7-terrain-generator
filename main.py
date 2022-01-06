@@ -59,8 +59,8 @@ def pretty_list(
     if length == 2:
         return f" {andor} ".join(array)
 
-    array[-1] = f"{andor} {array[-1]}"
-    out = ", ".join(array)
+    temp = array[:-1] + [f"{andor} {array[-1]}"]
+    out = ", ".join(temp)
 
     return out.replace(f", {andor}", f" {andor}")
 
@@ -74,7 +74,7 @@ class Room:
         self,
         name: str = "Room",
         value: float = 0.0,
-        attribute: str = "room attribute",
+        condition: str = "room condition",
         position: Tuple[int, int] = (0, 0),
         description: str = "The room description",
         printed_name: str = "Room",
@@ -85,7 +85,7 @@ class Room:
     ):
         self.name = name
         self.value = value
-        self.attribute = attribute
+        self.condition = condition
         self.position = position
         self.description = description
         self.printed_name = printed_name
@@ -109,7 +109,7 @@ class Room:
         neighbors = [d for d in neighbors if d]
 
         name = f"{self.name} is a room."
-        attribute = f"It is {self.attribute}."
+        condition = f"It is {self.condition}."
         description = f'The description of {self.name} is "[{self.description}]".'
         printed = f'The printed name is "{self.printed_name}".'
         directions = (
@@ -118,7 +118,30 @@ class Room:
             else ""
         )
 
-        return " ".join([name, attribute, description, printed, directions])
+        return " ".join([name, condition, description, printed, directions])
+
+
+class Region:
+    """
+    A Region representation
+    """
+
+    def __init__(
+        self,
+        name: str = "Region",
+        condition: str = "particular",
+        rooms: List[str] = [],
+    ):
+        self.name = name
+        self.condition = condition
+        self.rooms = rooms
+
+    def render(self) -> str:
+        name = f"{self.name} is a region."
+        rooms = pretty_list(array=[r for r in self.rooms], andor="and")
+        isare = "is" if len(self.rooms) == 1 else "are"
+
+        return " ".join([name, rooms, isare, f"in {self.name}."])
 
 
 class TerrainMaker:
@@ -130,46 +153,50 @@ class TerrainMaker:
         self,
         width: int = 6,
         height: int = 5,
-        octaves: float = 3,
         seed: int = 3,
         name: str = "Room",
         description: str = "room description",
         initial: str = "Some initial description here",
         region: str = "Region",
         printed_name: str = "Room",
-        attributes: Dict[str, str] = {
+        conditions: Dict[str, str] = {
             "black": "The room is black",
-            "grey": "The rrom is grey",
+            "grey": "The room is grey",
             "white": "The room is white",
         },
     ):
         self.width = max(1, width)
         self.height = max(1, height)
-        self.octaves = octaves
         self.seed = seed
         self.name = name
         self.description = description
         self.initial = initial
         self.region = region
         self.printed_name = printed_name
-        self.attributes = attributes
+        self.conditions = conditions
 
-        self.noise = PerlinNoise(octaves=self.octaves, seed=self.seed)
+    def __str__(self):
+        return self.render()
+
+    def noise(self, horizontal: float = 0.0, vertical: float = 0.0):
+        noise1 = PerlinNoise(octaves=3, seed=self.seed)
+        noise2 = PerlinNoise(octaves=6, seed=self.seed)
+        noise3 = PerlinNoise(octaves=12, seed=self.seed)
+        noise4 = PerlinNoise(octaves=24, seed=self.seed)
+
+        out = noise1([horizontal, vertical])
+        out += noise2([horizontal, vertical]) * 0.5
+        out += noise3([horizontal, vertical]) * 0.25
+        out += noise4([horizontal, vertical]) * 0.125
+
+        return out + 0.5
 
     def __values(self) -> List[float]:
         out = []
 
         for height in range(1, self.height + 1):
             for width in range(1, self.width + 1):
-                noise = (
-                    self.noise(
-                        [
-                            width / self.width + 1,
-                            height / self.height + 1,
-                        ]
-                    )
-                    + 0.5
-                )
+                noise = self.noise(width / self.width + 1, height / self.height + 1)
                 out.append(noise)
 
         return out
@@ -179,27 +206,22 @@ class TerrainMaker:
         index = 0
 
         values = self.__values()
+        conditions = self.conditions
 
         for height in range(1, self.height + 1):
             for width in range(1, self.width + 1):
                 index += 1
 
-                value = translate_value(
-                    values[index - 1],
-                    0,
-                    1,
-                    0,
-                    len(self.attributes) - 1,
-                )
+                value = translate_value(values[index - 1], 0, 1, 0, len(conditions) - 1)
                 position = (width - 1, height - 1)
-                keys = list(self.attributes.keys())
+                keys = list(conditions.keys())
                 count = (self.width * self.height) + 1
 
                 out.append(
                     Room(
                         name=f"{self.name} {words(count - index)}".title(),
                         value=value,
-                        attribute=keys[round(value)],
+                        condition=keys[round(value)],
                         position=position,
                         description=self.description,
                         printed_name=self.printed_name,
@@ -227,42 +249,64 @@ class TerrainMaker:
 
         return out
 
-    def render(self, region: bool = True) -> str:
-        """Outputs the list of generated rooms, with optional region
-
-        Args:
-            region (bool, optional): Generate a region as well? Defaults to True.
-
-        Returns:
-            str: The generated list of rooms, with attributes, connections and optional region.
-        """
-        keys = list(self.attributes.keys())
+    def __regions(self):
         out = []
 
-        props = pretty_list(array=keys, andor="or")
+        for key in list(self.conditions.keys()):
+            name = f"The {key} {self.region}".title()
+            rooms = [r.name for r in self.__rooms() if r.condition == key]
 
-        out.append(f"A room can be {props}. A room is usually {keys[0]}.")
+            if len(rooms):
+                out.append(
+                    Region(
+                        name=name,
+                        condition=key,
+                        rooms=rooms,
+                    )
+                )
 
-        attributes = []
-        attributes.append(f"To say {self.description}:")
-        attributes.append(f'\tsay "{self.initial} [run paragraph on]";')
+        return out
 
-        for prop, desc in self.attributes.items():
-            attributes.append(f'\tif the location is {prop}, say "{desc}";')
+    def __conditions(self):
+        regions = [r.condition for r in self.__regions()]
+        conditions = [c for c in list(self.conditions.keys()) if c in regions]
 
-        attributes = "\n".join(attributes) + "."
-        attributes = attributes.replace(";.", ".")
+        out = []
 
-        out.append(attributes)
+        if len(conditions):
+            intro = []
+            intro.append(f"A room can be {pretty_list(array=conditions, andor='or')}.")
+            intro.append(f"A room is usually {conditions[0]}.")
+
+            out.append(" ".join(intro))
+            out.append("")
+
+        out.append(f"To say {self.description}:")
+        out.append(f'\tsay "{self.initial} [run paragraph on]";')
+
+        for index, condition in enumerate(conditions):
+            description = self.conditions.get(condition)
+            last = "." if index == len(conditions) - 1 else ";"
+
+            out.append(f'\tif the location is {condition}, say "{description}"{last}')
+
+        return "\n".join(out).strip()
+
+    def render(self) -> str:
+        """Outputs the list of generated rooms, as well as the regions
+
+        Returns:
+            str: The generated list of rooms, with conditions and connections as well as the regions
+        """
+        out = []
+
+        out.append(self.__conditions())
 
         for room in self.__rooms():
             out.append(room.render())
 
-        if region:
-            rooms = [r.name for r in self.__rooms()]
-            isare = "is" if len(rooms) == 1 else "are"
-            rooms = pretty_list(array=rooms, andor="and")
-            out.append(f"{self.region} is a region. {rooms} {isare} in {self.region}.")
+        for region in self.__regions():
+            out.append(region.render())
 
         return "\n\n".join(out)
 
@@ -274,19 +318,20 @@ def main():
     terrain = TerrainMaker(
         width=5,
         height=4,
+        seed=123,
         name="Wilderness",
         region="Wilds",
         printed_name="Martian wilderness",
         description="wilderness-description",
         initial="[one of]Scrubland[or]Martian scrubland[or]Martian weeds[at random] [stretch] as far as the eye [can] see.",
-        attributes={
+        conditions={
             "flat": "The land here [are] flat.",
-            "hilly": "The land [are] somewhat hilly.",
-            "impacted": "[one of]A large[or]An eroded[or]A small[at random] crater [mar] the surface.",
-            "treed": "A lone tree [dominate] the landscape.",
+            "bouldered": "A [if a random chance of 1 in 3 succeeds]large[end if] boulder [dominate] the landscape.",
+            "cratered": "[one of]A large[or]An eroded[or]A small[at random] crater [mar] the surface.",
+            "treed": "A [one of]lone[or]single[or]withered[or][at random] tree [dominate] the landscape.",
         },
     )
-    print(terrain.render())
+    print(terrain)
 
 
 if __name__ == "__main__":
