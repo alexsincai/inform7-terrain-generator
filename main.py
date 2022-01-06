@@ -2,7 +2,7 @@
 Creates a list of Inform7 rooms, all connected, which have related features.
 """
 
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Tuple, Optional, Union
 from perlin_noise import PerlinNoise
 from num2words import num2words as words
 
@@ -35,6 +35,92 @@ def translate_value(
     return to_min + (ret * to_span)
 
 
+def pretty_list(
+    array: List[str] = ["foo", "bar", "baz"],
+    andor: str = "or",
+) -> str:
+    """Prettyfies a list
+
+    Args:
+        array (List[str], optional): A list of strings to join. Defaults to ["foo", "bar", "baz"].
+        andor (str, optional): The last element conjunction. Defaults to "or".
+
+    Returns:
+        str: The resulting string
+    """
+    length = len(array)
+
+    if not length:
+        return ""
+
+    if length == 1:
+        return array[0]
+
+    if length == 2:
+        return f" {andor} ".join(array)
+
+    array[-1] = f"{andor} {array[-1]}"
+    out = ", ".join(array)
+
+    return out.replace(f", {andor}", f" {andor}")
+
+
+class Room:
+    """
+    A room prepresentation
+    """
+
+    def __init__(
+        self,
+        name: str = "Room",
+        value: float = 0.0,
+        attribute: str = "room attribute",
+        position: Tuple[int, int] = (0, 0),
+        description: str = "The room description",
+        printed_name: str = "Room",
+        north: Optional[str] = None,
+        south: Optional[str] = None,
+        east: Optional[str] = None,
+        west: Optional[str] = None,
+    ):
+        self.name = name
+        self.value = value
+        self.attribute = attribute
+        self.position = position
+        self.description = description
+        self.printed_name = printed_name
+        self.north = north
+        self.south = south
+        self.east = east
+        self.west = west
+
+    def render(self) -> str:
+        """Generates an Inform7 room.
+
+        Returns:
+            str: The code for an Inform7 room.
+        """
+        north = f"north of {self.north}" if self.north else None
+        south = f"south of {self.south}" if self.south else None
+        east = f"east of {self.east}" if self.east else None
+        west = f"west of {self.west}" if self.west else None
+
+        neighbors = [north, south, east, west]
+        neighbors = [d for d in neighbors if d]
+
+        name = f"{self.name} is a room."
+        attribute = f"It is {self.attribute}."
+        description = f'The description of {self.name} is "[{self.description}]".'
+        printed = f'The printed name is "{self.printed_name}".'
+        directions = (
+            f"{self.name} is {pretty_list(array=neighbors, andor='and')}."
+            if len(neighbors)
+            else ""
+        )
+
+        return " ".join([name, attribute, description, printed, directions])
+
+
 class TerrainMaker:
     """
     Creates a list of Inform7 rooms, all connected, which have related features.
@@ -50,7 +136,8 @@ class TerrainMaker:
         description: str = "room description",
         initial: str = "Some initial description here",
         region: str = "Region",
-        properties: Dict[str, str] = {
+        printed_name: str = "Room",
+        attributes: Dict[str, str] = {
             "black": "The room is black",
             "grey": "The rrom is grey",
             "white": "The room is white",
@@ -64,7 +151,8 @@ class TerrainMaker:
         self.description = description
         self.initial = initial
         self.region = region
-        self.properties = properties
+        self.printed_name = printed_name
+        self.attributes = attributes
 
         self.noise = PerlinNoise(octaves=self.octaves, seed=self.seed)
 
@@ -88,121 +176,93 @@ class TerrainMaker:
 
     def __rooms(self) -> List[Dict[str, Optional[str]]]:
         out = []
-        index = 1
+        index = 0
 
         values = self.__values()
 
         for height in range(1, self.height + 1):
             for width in range(1, self.width + 1):
+                index += 1
+
                 value = translate_value(
                     values[index - 1],
                     0,
                     1,
                     0,
-                    len(self.properties) - 1,
+                    len(self.attributes) - 1,
                 )
-                east = f"{self.name} {words(index - 1)}".title() if width > 1 else None
-                west = (
-                    f"{self.name} {words(index + 1)}".title()
-                    if width <= self.width
-                    else None
-                )
-                north = (
-                    f"{self.name} {words(index - height + 1)}".title()
-                    if height > 1
-                    else None
-                )
-                south = (
-                    f"{self.name} {words(index - height - 1)}".title()
-                    if height > 1
-                    else None
-                )
-
-                keys = list(self.properties.keys())
+                position = (width - 1, height - 1)
+                keys = list(self.attributes.keys())
+                count = (self.width * self.height) + 1
 
                 out.append(
-                    {
-                        "name": f"{self.name} {words(index)}".title(),
-                        "value": keys[round(value)],
-                        "east": east,
-                        "west": west,
-                        "north": north,
-                        "south": south,
-                    }
+                    Room(
+                        name=f"{self.name} {words(count - index)}".title(),
+                        value=value,
+                        attribute=keys[round(value)],
+                        position=position,
+                        description=self.description,
+                        printed_name=self.printed_name,
+                    )
                 )
-                index += 1
+
+        for room in out:
+            pos_x, pos_y = room.position
+
+            if pos_y < self.height:
+                to_south = [r for r in out if r.position == (pos_x, pos_y + 1)]
+                room.north = to_south.pop().name if len(to_south) else None
+
+            if pos_y > 0:
+                to_north = [r for r in out if r.position == (pos_x, pos_y - 1)]
+                room.south = to_north.pop().name if len(to_north) else None
+
+            if pos_x < self.width:
+                to_east = [r for r in out if r.position == (pos_x + 1, pos_y)]
+                room.west = to_east.pop().name if len(to_east) else None
+
+            if pos_x > 0:
+                to_west = [r for r in out if r.position == (pos_x - 1, pos_y)]
+                room.east = to_west.pop().name if len(to_west) else None
 
         return out
 
-    def print(self, region: bool = True) -> str:
+    def render(self, region: bool = True) -> str:
         """Outputs the list of generated rooms, with optional region
 
         Args:
             region (bool, optional): Generate a region as well? Defaults to True.
 
         Returns:
-            str: The generated list of rooms, with properties, connections and optional region.
+            str: The generated list of rooms, with attributes, connections and optional region.
         """
+        keys = list(self.attributes.keys())
         out = []
-        length = len(self.properties.keys())
-        keys = list(self.properties.keys())
 
-        if length > 2:
-            props = ", ".join(
-                keys[0:-1] + [f"or {keys[-1]}"] if length > 1 else keys
-            ).replace(", or", " or")
-
-        elif length == 2:
-            props = " or ".join(keys)
-
-        else:
-            props = "".join(keys)
+        props = pretty_list(array=keys, andor="or")
 
         out.append(f"A room can be {props}. A room is usually {keys[0]}.")
 
-        properties = []
-        properties.append(f"To say {self.description}:")
-        properties.append(f'\tsay "{self.initial}[run paragraph on]";')
+        attributes = []
+        attributes.append(f"To say {self.description}:")
+        attributes.append(f'\tsay "{self.initial} [run paragraph on]";')
 
-        for prop, desc in self.properties.items():
-            properties.append(f'\tif the location is {prop}, say "{desc}";')
+        for prop, desc in self.attributes.items():
+            attributes.append(f'\tif the location is {prop}, say "{desc}";')
 
-        properties = "\n".join(properties) + "."
-        properties = properties.replace(";.", ".")
+        attributes = "\n".join(attributes) + "."
+        attributes = attributes.replace(";.", ".")
 
-        out.append(properties)
+        out.append(attributes)
 
         for room in self.__rooms():
-            this_room = f"{room.get('name')} is a room. "
-            this_room += f'The description is "[{self.description}]". '
-            this_room += f"It is {room.get('value')}. "
-
-            east = f"east of {room.get('east')}" if room.get("east") else None
-            west = f"west of {room.get('west')}" if room.get("west") else None
-            north = f"north of {room.get('north')}" if room.get("north") else None
-            south = f"south of {room.get('south')}" if room.get("south") else None
-
-            directions = [east, west, north, south]
-            directions = [d for d in directions if d]
-
-            if len(directions):
-                this_room += f"{room.get('name')} is { ' and '.join(directions) }."
-
-            out.append(f"{this_room.strip()}")
+            out.append(room.render())
 
         if region:
-            rooms = [r.get("name") for r in self.__rooms()]
-            length = len(rooms)
-
-            if length > 1:
-                rooms[-1] = f"and {rooms[-1]}"
-
-            rooms = ", ".join(rooms).replace(", and", " and")
-
-            out.append(
-                f"\n{self.region} is a region. "
-                + f"{rooms} {'are' if length > 1 else 'is'} in {self.region}."
-            )
+            rooms = [r.name for r in self.__rooms()]
+            isare = "is" if len(rooms) == 1 else "are"
+            rooms = pretty_list(array=rooms, andor="and")
+            out.append(f"{self.region} is a region. {rooms} {isare} in {self.region}.")
 
         return "\n\n".join(out)
 
@@ -212,20 +272,21 @@ def main():
     Create a wilderness
     """
     terrain = TerrainMaker(
-        width=2,
-        height=2,
+        width=5,
+        height=4,
         name="Wilderness",
         region="Wilds",
+        printed_name="Martian wilderness",
         description="wilderness-description",
         initial="[one of]Scrubland[or]Martian scrubland[or]Martian weeds[at random] [stretch] as far as the eye [can] see.",
-        properties={
-            "flat": "The land here is flat.",
-            "hilly": "The land is somewhat hilly",
-            "impacted": "A [one of]large[or]eroded[or]small[at random] crater mars the surface.",
-            "treed": "A lone tree dominates the landscape.",
+        attributes={
+            "flat": "The land here [are] flat.",
+            "hilly": "The land [are] somewhat hilly.",
+            "impacted": "[one of]A large[or]An eroded[or]A small[at random] crater [mar] the surface.",
+            "treed": "A lone tree [dominate] the landscape.",
         },
     )
-    print(terrain.print())
+    print(terrain.render())
 
 
 if __name__ == "__main__":
