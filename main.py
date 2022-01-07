@@ -137,8 +137,13 @@ class Region:
         self.rooms = rooms
 
     def render(self) -> str:
+        """Generates an Inform7 region.
+
+        Returns:
+            str: The generated region
+        """
         name = f"{self.name} is a region."
-        rooms = pretty_list(array=[r for r in self.rooms], andor="and")
+        rooms = pretty_list(array=self.rooms, andor="and")
         isare = "is" if len(self.rooms) == 1 else "are"
 
         return " ".join([name, rooms, isare, f"in {self.name}."])
@@ -178,7 +183,16 @@ class TerrainMaker:
     def __str__(self):
         return self.render()
 
-    def noise(self, horizontal: float = 0.0, vertical: float = 0.0):
+    def noise(self, horizontal: float = 0.0, vertical: float = 0.0) -> float:
+        """Generates a 2D noise map
+
+        Args:
+            horizontal (float, optional): X component. Defaults to 0.0.
+            vertical (float, optional): Y component. Defaults to 0.0.
+
+        Returns:
+            float: Noise value for current cell
+        """
         noise1 = PerlinNoise(octaves=3, seed=self.seed)
         noise2 = PerlinNoise(octaves=6, seed=self.seed)
         noise3 = PerlinNoise(octaves=12, seed=self.seed)
@@ -292,6 +306,28 @@ class TerrainMaker:
 
         return "\n".join(out).strip()
 
+    def test(self) -> str:
+        """Generates a test map with a maximum of 5 characters
+
+        Returns:
+            str: A gradient
+        """
+        chars = " .-+#"
+        out = ""
+
+        index = 1
+        values = self.__values()
+
+        for _ in range(self.height):
+            for _ in range(self.width):
+                value = translate_value(values[index - 1], 0, 1, 0, len(chars) - 1)
+                out += chars[round(value)]
+                index += 1
+
+            out += "\n"
+
+        return out
+
     def render(self) -> str:
         """Outputs the list of generated rooms, as well as the regions
 
@@ -308,6 +344,16 @@ class TerrainMaker:
         for region in self.__regions():
             out.append(region.render())
 
+        temp = f"{self.region} is a region. "
+        regions = [r.name for r in self.__regions()]
+        isare = "is" if len(regions) == 1 else "are"
+
+        temp += pretty_list(array=regions, andor="and")
+        temp += f" {isare} in "
+        temp += f"{self.region}."
+
+        out.append(temp)
+
         return "\n\n".join(out)
 
 
@@ -316,22 +362,23 @@ def main():
     Create a wilderness
     """
     terrain = TerrainMaker(
-        width=5,
+        width=3,
         height=4,
-        seed=123,
-        name="Wilderness",
-        region="Wilds",
-        printed_name="Martian wilderness",
-        description="wilderness-description",
-        initial="[one of]Scrubland[or]Martian scrubland[or]Martian weeds[at random] [stretch] as far as the eye [can] see.",
+        seed=244,
+        name="Gharraz",
+        region="Gharraz",
+        printed_name="A street of Gharraz",
+        description="gharraz-street-description",
+        initial="",
         conditions={
-            "flat": "The land here [are] flat.",
-            "bouldered": "A [if a random chance of 1 in 3 succeeds]large[end if] boulder [dominate] the landscape.",
-            "cratered": "[one of]A large[or]An eroded[or]A small[at random] crater [mar] the surface.",
-            "treed": "A [one of]lone[or]single[or]withered[or][at random] tree [dominate] the landscape.",
+            "ruined": "A poor street.",
+            "poor": "A poor street.",
+            "clean": "A clean street",
+            "prosperous": "A prosperos street",
+            "rich": "A large plaza",
         },
     )
-    print(terrain)
+    print(terrain.test())
 
 
 if __name__ == "__main__":
